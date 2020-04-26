@@ -44,28 +44,30 @@ def create_db_connection():
 
 def read_previous_usage_from_database(conn):
     cur = conn.cursor()
-    cur.execute('SELECT MAX(DATETIME), TOTAL, UPLOAD, DOWNLOAD FROM USAGE ')
-    result = cur.fetchall()
-    if result.count == 0:
+    cur.execute('SELECT MAX(DATETIME), TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE FROM USAGE ')
+    result = cur.fetchone()
+    if result is None:
         return {
             'datetime': '',
             'total': 0,
             'upload': 0,
-            'download': 0
+            'download': 0,
+            'allowance': 0
         }
     else:
         return {
-            'datetime': result[0][0],
-            'total': result[0][1],
-            'upload': result[0][2],
-            'download': result[0][3]
+            'datetime': result[0],
+            'total': result[1],
+            'upload': result[2],
+            'download': result[3],
+            'allowance': result[4]
         }
 
 
 def write_new_usage_to_database(conn, usage):
     cur = conn.cursor()
-    sql = 'INSERT INTO USAGE (DATETIME, TOTAL, UPLOAD, DOWNLOAD) VALUES (?,?,?,?)'
-    values = (usage['datetime'], usage['total'], usage['upload'], usage['download'])
+    sql = 'INSERT INTO USAGE (DATETIME, TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE) VALUES (?,?,?,?,?)'
+    values = (usage['datetime'], usage['total'], usage['upload'], usage['download'], usage['allowance'])
     cur.execute(sql, values)
     conn.commit()
     return cur.lastrowid
@@ -88,11 +90,13 @@ def retrieve_current_usage_from_mediacom():
     total = re.search('usageCurrentData.push\((.+?)\)', result.text).group(1)
     upload = re.search('usageCurrentUpData.push\((.+?)\)', result.text).group(1)
     download = re.search('usageCurrentDnData.push\((.+?)\)', result.text).group(1)
+    allowance = re.search('([0-9]+) GB monthly usage allowance', result.text).group(1)
     return {
         'datetime': year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':00',
         'total': float(total),
         'upload': float(upload),
-        'download': float(download)
+        'download': float(download),
+        'allowance': float(allowance)
     }
 
 def email_high_usage_alert(currentUsage, previousUsage):
@@ -116,4 +120,3 @@ if currentUsage['datetime'] == previousUsage['datetime']:
 else:
     write_new_usage_to_database(con, currentUsage)
     email_high_usage_alert(currentUsage, previousUsage)
-
