@@ -20,41 +20,28 @@ import dash_html_components as html
 import flask
 import sqlite3
 
-def read_data_from_database():
+
+def read_data_from_database(data):
+    data['datetime'].clear()
+    data['total'].clear()
+    data['upload'].clear()
+    data['download'].clear()
+    data['allowance'].clear()
     conn = sqlite3.connect('MediacomUsage.db')
     cur = conn.cursor()
     cur.execute('SELECT DATETIME, TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE FROM USAGE ORDER BY DATETIME ASC')
     rows = cur.fetchall()
-    datetime = []
-    total = []
-    upload = []
-    download = []
-    allowance = []
     for row in rows:
-        datetime.append(row[0])
-        total.append(row[1])
-        upload.append(row[2])
-        download.append(row[3])
-        allowance.append(row[4])
-    return {
-        'datetime': datetime,
-        'total': total,
-        'upload': upload,
-        'download': download,
-        'allowance': allowance
-    }
+        data['datetime'].append(row[0])
+        data['total'].append(row[1])
+        data['upload'].append(row[2])
+        data['download'].append(row[3])
+        data['allowance'].append(row[4])
 
 
-server = flask.Flask(__name__) # define flask app.server
-
-data = read_data_from_database()
-
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-
-#app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets, server=server) # call flask server
-
-app.layout = html.Div(children=[
+def serve_layout():
+    read_data_from_database(data)
+    return html.Div(children=[
     html.H1(children='Mediacom Internet Data Usage'),
 
     html.Div(children='''
@@ -97,6 +84,24 @@ app.layout = html.Div(children=[
         }
     )
 ])
+
+
+server = flask.Flask(__name__) # define flask app.server
+
+data = {
+    'datetime': [],
+    'total': [],
+    'upload': [],
+    'download': [],
+    'allowance': []
+}
+
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets, server=server) # call flask server
+
+app.layout = serve_layout
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
