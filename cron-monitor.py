@@ -15,27 +15,40 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-import re
-import requests
 import smtplib
 import ssl
 import sqlite3
+import json
+import time
+import datetime
 
+from seleniumwire import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+
+import logging
+logging.basicConfig(level=logging.ERROR)
 
 ### User Configurations ###
 #
-# Your customer id / account number with Mediacom
-#mediacomCustomerId = '1234567890'
-# SMTP server address 
+# Your username and password at Mediacom
+username = 'username'
+password = 'password'
+# SMTP server address
 smtpServerUrl = 'smtp.example.com'
 # SMTP server port number
 smtpServerPort = '465'
 # Username for SMTP server
-smtpUsername = 'user'
+smtpUsername = 'username'
 # Password for SMTP server
 smtpPassword = 'password'
 # Email address that should receive alerts
 emailAddress = 'user@example.com'
+# Location of chromedriver
+chromedriver = '/usr/bin/chromedriver'
+
 
 def create_db_connection():
     conn = sqlite3.connect('MediacomUsage.db')
@@ -44,7 +57,7 @@ def create_db_connection():
 
 def read_previous_usage_from_database(conn):
     cur = conn.cursor()
-    cur.execute('SELECT MAX(DATETIME), TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE FROM USAGE ')
+    cur.execute('SELECT MAX(DATETIME), TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE, BILLING_PERIOD_START, BILLING_PERIOD_END, ALLOWANCE_TO_DAY FROM USAGE')
     result = cur.fetchone()
     if result is None:
         return {
@@ -52,7 +65,10 @@ def read_previous_usage_from_database(conn):
             'total': 0,
             'upload': 0,
             'download': 0,
-            'allowance': 0
+            'allowance': 0,
+            'billing_period_start': '',
+            'billing_period_end': '',
+            'allowance_to_day': 0
         }
     else:
         return {
@@ -60,17 +76,21 @@ def read_previous_usage_from_database(conn):
             'total': result[1],
             'upload': result[2],
             'download': result[3],
-            'allowance': result[4]
+            'allowance': result[4],
+            'billing_period_start': result[5],
+            'billing_period_end': result[6],
+            'allowance_to_day': result[7]
         }
 
 
 def write_new_usage_to_database(conn, usage):
     cur = conn.cursor()
-    sql = 'INSERT INTO USAGE (DATETIME, TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE) VALUES (?,?,?,?,?)'
-    values = (usage['datetime'], usage['total'], usage['upload'], usage['download'], usage['allowance'])
+    sql = 'INSERT INTO USAGE (DATETIME, TOTAL, UPLOAD, DOWNLOAD, ALLOWANCE, BILLING_PERIOD_START, BILLING_PERIOD_END, ALLOWANCE_TO_DAY) VALUES (?,?,?,?,?,?,?,?)'
+    values = (usage['datetime'], usage['total'], usage['upload'], usage['download'], usage['allowance'], usage['billing_period_start'], usage['billing_period_end'], usage['allowance_to_day'])
     cur.execute(sql, values)
     conn.commit()
     return cur.lastrowid
+
 
 def pad_with_zero_to_two_characters(text):
     if len(text) == 1:
@@ -79,25 +99,79 @@ def pad_with_zero_to_two_characters(text):
         return text
 
 
+def text_to_number(text):
+    numeric = '0123456789-.'
+    for i, c in enumerate(text):
+        if c not in numeric:
+            break
+    number = text[:i]
+    return float(number)
+
+
 def retrieve_current_usage_from_mediacom():
-    result = requests.get('http://50.19.209.155/um/usage.action?custId=' + mediacomCustomerId)
-    datetimeMatche = re.search('by Mediacom as of ([0-9]{1,2})\/([0-9]{1,2})\/([0-9]{4}) ([0-9]{1,2}):([0-9]{2}). Note', result.text)
-    month = pad_with_zero_to_two_characters(datetimeMatche.group(1))
-    day = pad_with_zero_to_two_characters(datetimeMatche.group(2))
-    year = datetimeMatche.group(3)
-    hour = pad_with_zero_to_two_characters(datetimeMatche.group(4))
-    minute = pad_with_zero_to_two_characters(datetimeMatche.group(5))
-    total = re.search('usageCurrentData.push\((.+?)\)', result.text).group(1)
-    upload = re.search('usageCurrentUpData.push\((.+?)\)', result.text).group(1)
-    download = re.search('usageCurrentDnData.push\((.+?)\)', result.text).group(1)
-    allowance = re.search('([0-9]+) GB monthly usage allowance', result.text).group(1)
+    chrome_options = Options()
+    chrome_options.headless = True
+    driver = webdriver.Chrome(options = chrome_options, executable_path = chromedriver)
+
+    driver.get('https://support.mediacomcable.com')
+    login_button = WebDriverWait(driver, 15).until(
+        EC.element_to_be_clickable((By.XPATH, '//button[text()="MEDIACOM ID"]'))
+    )
+    time.sleep(1)
+    login_button.click()
+
+    # Login Page
+    if not (driver.current_url.startswith("https://sso.mediacomcable.com")):
+        print("Unexpected website: " + driver.current_url)
+        exit(-5)
+    username_input = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.XPATH, '//input[@name="pf.username"]'))
+    )
+    username_input.clear()
+    username_input.send_keys(username)
+
+    password_input = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.XPATH, '//input[@name="pf.pass"]'))
+    )
+    password_input.clear()
+    password_input.send_keys(password)
+    login_button = WebDriverWait(driver, 15).until(
+        EC.element_to_be_clickable((By.XPATH, '//button[text()="Sign In"]'))
+    )
+    time.sleep(1)
+    login_button.click()
+
+    # Wait for request that we're interested in
+    request = driver.wait_for_request('/api/api/InternetUsage/50014', 120)
+
+    body = json.loads(request.response.body)
+
+    print("Debug: Billing Periods received (using last one)")
+    periods = body['PeriodUsages']
+    for period in periods:
+        print("  " + period['BillingPeriod'])
+
+    usage = periods[len(periods) - 1]
+    driver.quit()
+
+    as_of_datetime = datetime.datetime.strptime(usage['AsOfDate'], '%m/%d/%Y %H:%M')
+    billing_period_start = datetime.datetime.strptime(usage['BillingPeriod'].split(' - ')[0], '%b %d, %Y')
+    billing_period_end = datetime.datetime.strptime(usage['BillingPeriod'].split(' - ')[1], '%b %d, %Y')
+    days_in_billing_period = (billing_period_end.date() - billing_period_start.date()).days + 1
+    days_into_billing_period = (as_of_datetime.date() - billing_period_start.date()).days + 1
+    allowance = float(text_to_number(usage['QuotaTxt']))
+    allowance_to_day = allowance / days_in_billing_period * days_into_billing_period
     return {
-        'datetime': year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':00',
-        'total': float(total),
-        'upload': float(upload),
-        'download': float(download),
-        'allowance': float(allowance)
+        'datetime': as_of_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+        'total': float(text_to_number(usage['TotalOctetsTxt'])),
+        'upload': float(text_to_number(usage['TotalUpOctetsTxt'])),
+        'download': float(text_to_number(usage['TotalDnOctetsTxt'])),
+        'allowance': allowance,
+        'billing_period_start': billing_period_start.strftime('%Y-%m-%d'),
+        'billing_period_end': billing_period_end.strftime('%Y-%m-%d'),
+        'allowance_to_day': int(allowance_to_day)
     }
+
 
 def email_high_usage_alert(currentUsage, previousUsage):
     message = 'Subject: Mediacom Data Usage Warning\n' \
