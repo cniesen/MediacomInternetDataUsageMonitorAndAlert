@@ -98,14 +98,9 @@ def pad_with_zero_to_two_characters(text):
     else:
         return text
 
-
-def text_to_number(text):
-    numeric = '0123456789-.'
-    for i, c in enumerate(text):
-        if c not in numeric:
-            break
-    number = text[:i]
-    return float(number)
+# octet (aka bytes) to GB: 1GB = 1024 * 1024 * 1024 bytes
+def octets_to_gb(text):
+    return float(text) / 1073741824
 
 
 def retrieve_current_usage_from_mediacom():
@@ -159,17 +154,17 @@ def retrieve_current_usage_from_mediacom():
     billing_period_end = datetime.datetime.strptime(usage['BillingPeriod'].split(' - ')[1], '%b %d, %Y')
     days_in_billing_period = (billing_period_end.date() - billing_period_start.date()).days + 1
     days_into_billing_period = (as_of_datetime.date() - billing_period_start.date()).days + 1
-    allowance = float(text_to_number(usage['QuotaTxt']))
+    allowance = octets_to_gb(usage['Quota'])
     allowance_to_day = allowance / days_in_billing_period * days_into_billing_period
     return {
         'datetime': as_of_datetime.strftime('%Y-%m-%d %H:%M:%S'),
-        'total': float(text_to_number(usage['TotalOctetsTxt'])),
-        'upload': float(text_to_number(usage['TotalUpOctetsTxt'])),
-        'download': float(text_to_number(usage['TotalDnOctetsTxt'])),
-        'allowance': allowance,
+        'total': round(octets_to_gb(usage['TotalOctets']), 1),
+        'upload': round(octets_to_gb(usage['TotalUpOctets']), 1),
+        'download': round(octets_to_gb(usage['TotalDnOctets']), 1),
+        'allowance': round(allowance, 1),
         'billing_period_start': billing_period_start.strftime('%Y-%m-%d'),
         'billing_period_end': billing_period_end.strftime('%Y-%m-%d'),
-        'allowance_to_day': int(allowance_to_day)
+        'allowance_to_day': round(allowance_to_day)
     }
 
 
