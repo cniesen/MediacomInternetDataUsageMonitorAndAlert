@@ -2,6 +2,13 @@ MediacomInternetDataUsageMonitorAndAlert
 ========================================
 Monitor your Mediacom internet data usage and receive alerts when exessive usage occurs.  A website allows you to view historical data as well.
 
+What Mediacom shows:
+![Image of what Mediacom shows to its customers](what-mediacom-shows.png)
+
+What this MediacomInternetDataUsageMonitorAndAlert program shows:
+![Image of what this program will show](what-this-shows.png)
+
+
 cron-monitor.py
 ---------------
 Python script to be run via cron.  The scripts gets the current data usage and stores it in the database.  See "User Configuration" in the script file for the required configuration.
