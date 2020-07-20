@@ -105,7 +105,9 @@ def octets_to_gb(text):
 
 def retrieve_current_usage_from_mediacom():
     chrome_options = Options()
-    chrome_options.headless = True
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--window-size=1440, 900')
+    chrome_options.add_argument('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36')
     driver = webdriver.Chrome(options = chrome_options, executable_path = chromedriver)
 
     driver.get('https://support.mediacomcable.com')
