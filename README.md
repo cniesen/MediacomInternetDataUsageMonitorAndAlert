@@ -1,3 +1,5 @@
+This project is no longer actively supported since I'm not a Mediacom customer anymore.
+
 MediacomInternetDataUsageMonitorAndAlert
 ========================================
 Monitor your Mediacom internet data usage and receive alerts when exessive usage occurs.  A website allows you to view historical data as well.
